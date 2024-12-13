@@ -11,7 +11,7 @@
 #include <stdint.h>
 
 extern void PWMInit();
-
+extern void PWM3Set(int32_t Active);
 extern void PWM1Set(int32_t Velocidad);
 extern void PWM2Set(int32_t Velocidad);
 extern void PWMSetBoth(volatile uint32_t Velocidad1,volatile uint32_t Velocidad2);

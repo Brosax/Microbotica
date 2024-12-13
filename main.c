@@ -150,7 +150,7 @@ void Setup_Hardware(void){
 
     //Volvemos a configurar los LEDs en modo GPIO POR Defecto
     MAP_GPIOPinTypeGPIOOutput(GPIO_PORTF_BASE, GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3);
-    MAP_GPIOPinTypeGPIOInput(GPIO_PORTF_BASE, GPIO_PIN_4);
+    //MAP_GPIOPinTypeGPIOInput(GPIO_PORTF_BASE, GPIO_PIN_4);
 
     ButtonsInit();
     MAP_IntPrioritySet(INT_GPIOF,configMAX_SYSCALL_INTERRUPT_PRIORITY);//para a馻dir prioridad by HAMED
@@ -160,12 +160,12 @@ void Setup_Hardware(void){
     // Configure Port A for encoder input
     MAP_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
     MAP_SysCtlPeripheralSleepEnable(SYSCTL_PERIPH_GPIOA);
-    ROM_GPIODirModeSet(GPIO_PORTA_BASE, GPIO_PIN_3|GPIO_PIN_4, GPIO_DIR_MODE_IN);
-    MAP_GPIOPinTypeGPIOInput(GPIO_PORTA_BASE,GPIO_PIN_3|GPIO_PIN_4);
+    ROM_GPIODirModeSet(GPIO_PORTA_BASE, GPIO_PIN_2|GPIO_PIN_3, GPIO_DIR_MODE_IN);
+    MAP_GPIOPinTypeGPIOInput(GPIO_PORTA_BASE,GPIO_PIN_2|GPIO_PIN_3);
     MAP_IntPrioritySet(INT_GPIOA,configMAX_SYSCALL_INTERRUPT_PRIORITY);//para a馻dir prioridad by HAMED
-    MAP_GPIOIntTypeSet(GPIO_PORTA_BASE, GPIO_PIN_3|GPIO_PIN_4, GPIO_BOTH_EDGES); // Configure interrupt on both rising and falling edges
+    MAP_GPIOIntTypeSet(GPIO_PORTA_BASE, GPIO_PIN_2|GPIO_PIN_3, GPIO_BOTH_EDGES); // Configure interrupt on both rising and falling edges
 
-    MAP_GPIOIntEnable(GPIO_PORTA_BASE,GPIO_PIN_3|GPIO_PIN_4);
+    MAP_GPIOIntEnable(GPIO_PORTA_BASE,GPIO_PIN_2|GPIO_PIN_3);
     MAP_IntEnable(INT_GPIOA);
 
     miSemaforo  = xSemaphoreCreateBinary();
@@ -180,12 +180,7 @@ void Setup_Hardware(void){
        while (1);
     }
 
-    // kp = 15 , ki = 0 , Kd = 0
-    PID_Init(&pidA, 16.0f, 0.0f, 0.0f);
-    PID_Init(&pidB, 16.0f, 0.0f, 0.0f);
-    PWMInit();
 
-    configADC_IniciaADC();
 }
 
 //int mover_robotM(int32_t distance)
@@ -269,7 +264,7 @@ static portTASK_FUNCTION(ADCTask,pvParameters)
     {
         configADC_LeeADC(&muestras);    //Espera y lee muestras del ADC (BLOQUEANTE)
 
-        //UARTprintf("%d %d\r\n",muestras.chan1 ,muestras.chan2);
+        UARTprintf("%d %d %d\r\n",muestras.chan1 ,muestras.chan2 , muestras.chan8);
 
         if( muestras.chan2 < 3420 && muestras.chan2 > 899)
         {
@@ -398,6 +393,11 @@ static portTASK_FUNCTION(Switch3Task,pvParameters)
 int main(void)
 {
     Setup_Hardware();
+    // kp = 15 , ki = 0 , Kd = 0
+    PID_Init(&pidA, 16.0f, 0.0f, 0.0f);
+    PID_Init(&pidB, 16.0f, 0.0f, 0.0f);
+    PWMInit();
+    configADC_IniciaADC();
 
 	/********************************      Creacion de tareas *********************/
 
@@ -472,73 +472,21 @@ void GPIOFIntHandler(void){
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
-//void encoderInterruptHandler(void){
-//
-//  int32_t i32PinStatus=MAP_GPIOPinRead(GPIO_PORTA_BASE,GPIO_PIN_3);
-//    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-//    ROM_IntDisable(INT_GPIOA);
-//    int ui8Delay = 0;
-//    for(ui8Delay = 0; ui8Delay < 16; ui8Delay++)
-//    {
-//    }
-//
-//
-//    if (!(i32PinStatus & GPIO_PIN_3))
-//    {
-//        theta = 1;
-//        xSemaphoreGiveFromISR(encoderSemaphore,&xHigherPriorityTaskWoken);
-//    }
-//    MAP_IntEnable(INT_GPIOA);
-//    xSemaphoreGiveFromISR(encoderSemaphore,&xHigherPriorityTaskWoken);
-//    MAP_GPIOIntClear(GPIO_PORTA_BASE,GPIO_PIN_3);
-//    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-//
-//}
 
  //Interrupt handler for GPIO Port A (PA3 and PA4)
 void encoderInterruptHandler(void) {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
     // Check which pin triggered the interrupt and give the corresponding semaphore
-    if (GPIOIntStatus(GPIO_PORTA_BASE, true) & GPIO_PIN_3) {
+    if (GPIOIntStatus(GPIO_PORTA_BASE, true) & GPIO_PIN_2) {
         xSemaphoreGiveFromISR(encoderSemaphoreA, &xHigherPriorityTaskWoken);
-        GPIOIntClear(GPIO_PORTA_BASE, GPIO_PIN_3);
+        GPIOIntClear(GPIO_PORTA_BASE, GPIO_PIN_2);
     }
-    if (GPIOIntStatus(GPIO_PORTA_BASE, true) & GPIO_PIN_4) {
+    if (GPIOIntStatus(GPIO_PORTA_BASE, true) & GPIO_PIN_3) {
         xSemaphoreGiveFromISR(encoderSemaphoreB, &xHigherPriorityTaskWoken);
-        GPIOIntClear(GPIO_PORTA_BASE, GPIO_PIN_4);
+        GPIOIntClear(GPIO_PORTA_BASE, GPIO_PIN_3);
     }
 
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
-
-//void encoderInterruptHandler(void) {
-//    static uint32_t lastTickPA3 = 0;  // PA3 的上次触发时间
-//    static uint32_t lastTickPA4 = 0;  // PA4 的上次触发时间
-//    const uint32_t debounceThreshold = 10;  // 防抖时间阈值（单位：ms）
-//
-//    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-//
-//    uint32_t currentTick = xTaskGetTickCountFromISR();  // 获取当前时间（单位：tick）
-//
-//    // PA3 防抖逻辑
-//    if (GPIOIntStatus(GPIO_PORTA_BASE, true) & GPIO_PIN_3) {
-//        if ((currentTick - lastTickPA3) > pdMS_TO_TICKS(debounceThreshold)) {
-//            xSemaphoreGiveFromISR(encoderSemaphoreA, &xHigherPriorityTaskWoken);
-//            lastTickPA3 = currentTick;  // 更新上次触发时间
-//        }
-//        GPIOIntClear(GPIO_PORTA_BASE, GPIO_PIN_3);
-//    }
-//
-//    // PA4 防抖逻辑
-//    if (GPIOIntStatus(GPIO_PORTA_BASE, true) & GPIO_PIN_4) {
-//        if ((currentTick - lastTickPA4) > pdMS_TO_TICKS(debounceThreshold)) {
-//            xSemaphoreGiveFromISR(encoderSemaphoreA, &xHigherPriorityTaskWoken);
-//            lastTickPA4 = currentTick;  // 更新上次触发时间
-//        }
-//        GPIOIntClear(GPIO_PORTA_BASE, GPIO_PIN_4);
-//    }
-//
-//    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);  // 如果需要，触发任务切换
-//}

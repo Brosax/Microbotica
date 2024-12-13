@@ -406,6 +406,23 @@ static int Cmd_PID(int argc, char *argv[])
     return 0;
 }
 
+static int Cmd_FORK(int argc, char *argv[])
+{
+    uint32_t state;
+
+    if (argc != 2)
+    {
+        //Si los parametros no son suficientes, muestro la ayuda
+        UARTprintf(" Actfork [state]\r\n");
+    }
+    else
+    {
+        state=strtoul(argv[1], NULL,10);
+        PWM3Set(state);
+    }
+
+    return 0;
+}
 
 
 // ==============================================================================
@@ -426,6 +443,7 @@ tCmdLineEntry g_psCmdTable[] =
     { "MOVE",     Cmd_Move,     "    : Mover robot rectos hacia alante" },
     { "GIRA",     Cmd_Gira,     "    : Girar robot un angulo" },
     { "PID",      Cmd_PID,     "    : configura parametros del PID" },
+    { "Actfork",  Cmd_FORK,     "    : Activar fork " },
 
     #if ( configUSE_TRACE_FACILITY == 1 )
 	{ "tasks",    Cmd_tasks,     "    : Muestra informacion de las tareas" },
