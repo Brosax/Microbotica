@@ -264,7 +264,7 @@ static portTASK_FUNCTION(ADCTask,pvParameters)
     {
         configADC_LeeADC(&muestras);    //Espera y lee muestras del ADC (BLOQUEANTE)
 
-        UARTprintf("%d %d %d\r\n",muestras.chan1 ,muestras.chan2 , muestras.chan8);
+        //UARTprintf("%d %d %d\r\n",muestras.chan1 ,muestras.chan2 , muestras.chan8);
 
         if( muestras.chan2 < 3420 && muestras.chan2 > 899)
         {
@@ -306,13 +306,15 @@ static portTASK_FUNCTION(ADCTask,pvParameters)
         {
             //los leds permanecen apagados
             GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3,0);
-
         }
-
-       // UARTprintf("He leedo ADC0 %d\n ",muestras.chan2);
 
     }
 }
+
+
+
+
+
 
 //static void Switch1Task(void *pvParameters)
 static portTASK_FUNCTION(Switch1Task,pvParameters)
@@ -406,7 +408,6 @@ int main(void)
     {
         while(1);
     }
-
 
 	if((xTaskCreate(ADCTask, (portCHAR *)"ADC", ADC_TASK_STACK,NULL,ADC_TASK_PRIORITY, NULL) != pdTRUE))
     {

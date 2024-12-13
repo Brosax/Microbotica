@@ -16,6 +16,7 @@
 #define L 10  //distancia entre las ruedas
 #define Convertir_Angulo (360.0f / (2.0f * M_PI))
 #define Resolucion 20 //en grado
+//#define Resolucion 26 //en grado
 
 // PID Controller structure definition
 typedef struct {
