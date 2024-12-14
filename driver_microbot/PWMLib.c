@@ -22,12 +22,6 @@
 #include "pid.h"
 //#include "PWMLib.h"
 
-
-#define RADIO 2.9f  // Wheel radius in cm
-#define L 10  //distancia entre las ruedas
-#define Convertir_Angulo (360.0f / (2.0f * M_PI))
-#define Resolucion 20 //en grado
-
 extern SemaphoreHandle_t encoderSemaphoreA;
 extern PIDController pidA, pidB;
 
@@ -123,14 +117,14 @@ void stop()
     PWM2Set(0);
 }
 
-int mover_robot(float c) {
+int mover_robot(volatile int32_t c) {
 
     Robot_Move_PID(&pidA, &pidB,c,0);
 
     return 0;
 }
 
-int girar_robot(float g)
+int girar_robot(volatile int32_t g)
 {
     Rotate_Robot_PID(&pidA, &pidB,g,0);
 

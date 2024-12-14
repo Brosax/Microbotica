@@ -338,7 +338,7 @@ static int Cmd_DcMo(int argc, char *argv[])
 
 static int Cmd_Move(int argc, char *argv[])
 {
-    float C;
+    int32_t C;
 
     if (argc != 2)
     {
@@ -347,9 +347,9 @@ static int Cmd_Move(int argc, char *argv[])
     }
     else
     {
-        C=strtof(argv[1], NULL);
+        C=atoi(argv[1]);
 
-        mover_robot(&C);
+        mover_robot(C);
 
     }
 
@@ -361,7 +361,7 @@ static int Cmd_Move(int argc, char *argv[])
 
 static int Cmd_Gira(int argc, char *argv[])
 {
-    float g;
+    int32_t g;
 
     if (argc != 2)
     {
@@ -370,8 +370,8 @@ static int Cmd_Gira(int argc, char *argv[])
     }
     else
     {
-        g=strtof(argv[1], NULL);
-        girar_robot(&g);
+        g=atoi(argv[1]);
+        girar_robot(g);
 
     }
 

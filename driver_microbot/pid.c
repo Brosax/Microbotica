@@ -106,7 +106,7 @@ void Robot_Move_PID(PIDController *pidA, PIDController *pidB, int32_t distance,f
             }
         }
         // Print debug information
-        UARTprintf(" targetTicks : %d, Ticks A: %d, Ticks B: %d, PWM A: %d, PWM B: %d\n", targetTicks, currentTicksA, currentTicksB, pwmA, pwmB);
+        //UARTprintf(" targetTicks : %d, Ticks A: %d, Ticks B: %d, PWM A: %d, PWM B: %d\n", targetTicks, currentTicksA, currentTicksB, pwmA, pwmB);
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 
@@ -164,7 +164,7 @@ int Rotate_Robot_PID(PIDController *pidA, PIDController *pidB, int32_t angle,flo
 
             // Print debug information
             //UARTprintf("Rotate Right - targetTicks : %d, Ticks A: %d, Ticks B: %d   PWM A: %d, PWM B: %d \n",targetTicks, currentTicksA, currentTicksB, pwmA, pwmB);
-            UARTprintf("Rotate Right - Ticks A: %d, Ticks B: %d PWM A: %d, PWM B: %d \n", currentTicksA, currentTicksB, pwmA, pwmB);
+           // UARTprintf("Rotate Right - Ticks A: %d, Ticks B: %d PWM A: %d, PWM B: %d \n", currentTicksA, currentTicksB, pwmA, pwmB);
 
             // Add a small delay to prevent too-fast polling
             vTaskDelay(pdMS_TO_TICKS(10));
@@ -195,7 +195,7 @@ int Rotate_Robot_PID(PIDController *pidA, PIDController *pidB, int32_t angle,flo
             currentTicksB += GetEncoderTicks(MOTOR_B);
 
             // Print debug information
-            UARTprintf("Rotate Left - Ticks A: %d, Ticks B: %d PWM A: %d, PWM B: %d \n", currentTicksA, currentTicksB, pwmA, pwmB);
+            //UARTprintf("Rotate Left - Ticks A: %d, Ticks B: %d PWM A: %d, PWM B: %d \n", currentTicksA, currentTicksB, pwmA, pwmB);
             vTaskDelay(pdMS_TO_TICKS(10));
         }
     }

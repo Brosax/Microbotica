@@ -19,7 +19,6 @@
 #include "task.h"
 #include "queue.h"
 #include "semphr.h"
-#include "timers.h"
 #include "utils/cpu_usage.h"
 
 #include "drivers/rgb.h"
@@ -62,9 +61,8 @@ PIDController pidA, pidB;
 //int motor2 = 0;
 
 
-// 定义软件定时器句柄
-TimerHandle_t BarraTimer;
-SemaphoreHandle_t miSemaforo,miSemaforo2,miSemaforo3;
+
+SemaphoreHandle_t miSemaforo,miSemaforo2,FrontEdgeSemaphore;
 SemaphoreHandle_t encoderSemaphoreA,encoderSemaphoreB,BarraSemaphore;
 //*****************************************************************************
 //
@@ -163,15 +161,16 @@ void Setup_Hardware(void){
     // Configure Port A for encoder input
     MAP_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
     MAP_SysCtlPeripheralSleepEnable(SYSCTL_PERIPH_GPIOA);
-    ROM_GPIODirModeSet(GPIO_PORTA_BASE, GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_5, GPIO_DIR_MODE_IN);
-    MAP_GPIOPinTypeGPIOInput(GPIO_PORTA_BASE,GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_5);
+    ROM_GPIODirModeSet(GPIO_PORTA_BASE, GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_5|GPIO_PIN_7, GPIO_DIR_MODE_IN);
+    MAP_GPIOPinTypeGPIOInput(GPIO_PORTA_BASE,GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_5|GPIO_PIN_7);
     MAP_IntPrioritySet(INT_GPIOA,configMAX_SYSCALL_INTERRUPT_PRIORITY);//para añadir prioridad by HAMED
 
     MAP_GPIOIntTypeSet(GPIO_PORTA_BASE, GPIO_PIN_2|GPIO_PIN_3, GPIO_BOTH_EDGES); // Configure interrupt on both rising and falling edges
 
     MAP_GPIOIntTypeSet(GPIO_PORTA_BASE, GPIO_PIN_5, GPIO_RISING_EDGE); // Configure interrupt rising edges ,barra frontal.
+    MAP_GPIOIntTypeSet(GPIO_PORTA_BASE, GPIO_PIN_7, GPIO_RISING_EDGE); // sensor suelo frontal
 
-    MAP_GPIOIntEnable(GPIO_PORTA_BASE,GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_5);
+    MAP_GPIOIntEnable(GPIO_PORTA_BASE,GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_5|GPIO_PIN_7);
     MAP_IntEnable(INT_GPIOA);
 
 
@@ -179,15 +178,12 @@ void Setup_Hardware(void){
 
     miSemaforo  = xSemaphoreCreateBinary();
     miSemaforo2 = xSemaphoreCreateBinary();
-    miSemaforo3 = xSemaphoreCreateBinary();
-    if (miSemaforo == NULL || miSemaforo2 == NULL || miSemaforo3 == NULL) {
-           while (1);
-        }
+    FrontEdgeSemaphore = xSemaphoreCreateBinary();
     encoderSemaphoreA = xSemaphoreCreateBinary();
     encoderSemaphoreB = xSemaphoreCreateBinary();
     BarraSemaphore = xSemaphoreCreateBinary();
 
-    if (encoderSemaphoreA == NULL || encoderSemaphoreB == NULL || BarraSemaphore == NULL) {
+    if (encoderSemaphoreA == NULL || encoderSemaphoreB == NULL || BarraSemaphore == NULL ||miSemaforo == NULL || miSemaforo2 == NULL || FrontEdgeSemaphore == NULL ) {
        while (1);
     }
 
@@ -228,28 +224,21 @@ void Setup_Hardware(void){
 
 int lazocerado()
 {
-    mover_robot(12);
-    SysCtlDelay(600000);
+    mover_robot(15);
 
-    girar_robot(90);
-    SysCtlDelay(600000);
+    girar_robot(-95);
 
-    mover_robot(18);
-    SysCtlDelay(600000);
+    mover_robot(15);
 
-    girar_robot(90);
-    SysCtlDelay(600000);
+    girar_robot(-95);
 
-    mover_robot(12);
-    SysCtlDelay(600000);
+    mover_robot(15);
 
-    girar_robot(90);
-    SysCtlDelay(600000);
+    girar_robot(-95);
 
-    mover_robot(18);
-    SysCtlDelay(600000);
+    mover_robot(15);
 
-    girar_robot(90);
+    girar_robot(-95);
 
     return 0;
 }
@@ -330,17 +319,42 @@ static portTASK_FUNCTION(ADCTask,pvParameters)
 //static void Switch1Task(void *pvParameters)
 static portTASK_FUNCTION(Switch1Task,pvParameters)
 {
-
+    TickType_t xLastWakeTime ;
     xSemaphoreTake(miSemaforo,portMAX_DELAY);
     //
     // Loop forever.
     //
     while(1)
     {
+        xSemaphoreTake(miSemaforo,portMAX_DELAY);
+        xLastWakeTime = xTaskGetTickCount();
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
+        mover_robot(15);
+        xLastWakeTime = xTaskGetTickCount();
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
+        girar_robot(-90);
+        xLastWakeTime = xTaskGetTickCount();
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
+        mover_robot(15);
+        xLastWakeTime = xTaskGetTickCount();
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
+        girar_robot(-90);
+        xLastWakeTime = xTaskGetTickCount();
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
+        mover_robot(15);
+        xLastWakeTime = xTaskGetTickCount();
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
+        girar_robot(-90);
+        xLastWakeTime = xTaskGetTickCount();
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
+        mover_robot(15);
+        xLastWakeTime = xTaskGetTickCount();
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
+        girar_robot(-90);
 
-         lazocerado();
 
-       xSemaphoreTake(miSemaforo,portMAX_DELAY);
+
+
     }
 }
 
@@ -352,64 +366,32 @@ static portTASK_FUNCTION(Switch2Task,pvParameters)
     //
     while(1)
     {
-
-       mover_robot(18.22);//eligimos para probar mover
         xSemaphoreTake(miSemaforo2,portMAX_DELAY);
+        girar_robot(-90);
+
        //UARTprintf("He puesto botton drecha ye mandado mensaje\n");
     }
 }
 
-static portTASK_FUNCTION(Switch3Task,pvParameters)
-{
-    xSemaphoreTake(miSemaforo3,portMAX_DELAY);
-    //
-    // Loop forever.
-    //
-    while(1)
-    {
-//        configADC_DisparaADC(); //Dispara la conversion (por software)
-        xSemaphoreTake(miSemaforo3,portMAX_DELAY);
-        //UARTprintf("He puesto botton drecha ye mandado mensaje\n");
-    }
-}
 
 static portTASK_FUNCTION(BarraTask,pvParameters)
 {
     xSemaphoreTake(BarraSemaphore,portMAX_DELAY);
+    TickType_t ui32LastTime;
     //
     // Loop forever.
     //
     while(1)
     {
         xSemaphoreTake(BarraSemaphore,portMAX_DELAY);
-//        PWM3Set(1);
-//        TaskDelay(pdMS_TO_TICKS(500));
-//        PWM3Set(0);
+        ui32LastTime = xTaskGetTickCount();
+        PWM3Set(1);
+        vTaskDelayUntil(&ui32LastTime, 2000);
+        PWM3Set(0);
+
     }
 }
 
-
-// Función para mapear los valores de un rango a otro
-//float map(float value, float in_min, float in_max, float out_min, float out_max) {
-//    return (value - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
-//}
-
-// Función para convertir los valores del joystick (x, y) en señales para los motores
-//void joystickToMotor(float x, float y, int* motor1, int* motor2) {
-//    // Normalizar el valor del joystick (x, y) para que est en el rango [-1, 1]
-//    float magnitude = sqrt(x * x + y * y);
-//    if (magnitude > 1) {
-//        x /= magnitude;
-//        y /= magnitude;
-//    }
-//
-//    // Convertir el valor de 'x' del joystick para el rango de los motores (50-100)
-//    // Para motor1 (gira en un sentido)
-//    *motor1 = (int)map(x, -1.0, 1.0, 50, 100);
-//
-//    // Para motor2 (gira en sentido contrario al motor1)
-//    *motor2 = (int)map(x, -1.0, 1.0, 100, 50);
-//}
 
 
 //*****************************************************************************
@@ -448,10 +430,6 @@ int main(void)
     {
         while(1);
     }
-    if((xTaskCreate(Switch3Task,(portCHAR *) "Sw3",SW_TASK_STACK_SIZE, NULL,SW_TASK_PRIO, NULL) != pdTRUE))
-    {
-        while(1);
-    }
 
     if((xTaskCreate(BarraTask,(portCHAR *) "BarraTask",SW_TASK_STACK_SIZE, NULL,SW_TASK_PRIO, NULL) != pdTRUE))
     {
@@ -474,14 +452,10 @@ int main(void)
 void GPIOFIntHandler(void){
     //Lee el estado del puerto (activos a nivel bajo)
 
-    int32_t i32PinStatus=MAP_GPIOPinRead(GPIO_PORTF_BASE,ALL_BUTTONS | GPIO_PIN_4);
+    int32_t i32PinStatus=MAP_GPIOPinRead(GPIO_PORTF_BASE,ALL_BUTTONS );
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    ROM_IntDisable(INT_GPIOF);
-    int ui8Delay = 0;
 
-    for(ui8Delay = 0; ui8Delay < 16; ui8Delay++)
-    {
-    }
+
     if (!(i32PinStatus & LEFT_BUTTON))
     {
         xSemaphoreGiveFromISR(miSemaforo,&xHigherPriorityTaskWoken);
@@ -493,66 +467,9 @@ void GPIOFIntHandler(void){
 
     }
 
-    if ((i32PinStatus & GPIO_PIN_4))
-    {
-        xSemaphoreGiveFromISR(miSemaforo3,&xHigherPriorityTaskWoken);
-
-    }
-    MAP_IntEnable(INT_GPIOF);
-    MAP_GPIOIntClear(GPIO_PORTF_BASE,ALL_BUTTONS | GPIO_PIN_4);
+    MAP_GPIOIntClear(GPIO_PORTF_BASE,ALL_BUTTONS );
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
-
-
-
-
-
-
-// 软件定时器回调函数
-void BarraTimerCallback(TimerHandle_t xTimer)
-{
-    // 关闭 PWM 输出
-    PWM3Set(0);
-}
-
-// 初始化事件驱动的 Barra 控制
-void InitBarraEventDriven(void)
-{
-    // 创建定时器，触发一次后自动停止
-    BarraTimer = xTimerCreate(
-        "BarraTimer",            // 定时器名称
-        pdMS_TO_TICKS(500),      // 定时器周期：500ms
-        pdFALSE,                 // 非周期性定时器
-        NULL,                    // 定时器标识符（未使用）
-        BarraTimerCallback       // 定时器回调函数
-    );
-
-    if (BarraTimer == NULL)
-    {
-        // 错误处理：无法创建定时器
-        UARTprintf("Error: Failed to create BarraTimer\n");
-        while (1);
-    }
-}
-
-// 事件触发函数
-void TriggerBarraEvent(void)
-{
-    // 激活 PWM
-    PWM3Set(1);
-
-    // 启动定时器，用于关闭 PWM
-    if (xTimerStart(BarraTimer, 0) != pdPASS)
-    {
-        // 错误处理：无法启动定时器
-        UARTprintf("Error: Failed to start BarraTimer\n");
-    }
-}
-
-
-
-
-
 
 
  //Interrupt handler for GPIO Port A (PA3 and PA4)
@@ -561,25 +478,26 @@ void encoderInterruptHandler(void) {
 
     // Check which pin triggered the interrupt and give the corresponding semaphore
     if (GPIOIntStatus(GPIO_PORTA_BASE, true) & GPIO_PIN_2) {
-
-        GPIOIntClear(GPIO_PORTA_BASE, GPIO_PIN_2);
         xSemaphoreGiveFromISR(encoderSemaphoreA, &xHigherPriorityTaskWoken);
+        GPIOIntClear(GPIO_PORTA_BASE, GPIO_PIN_2);
     }
-    if (GPIOIntStatus(GPIO_PORTA_BASE, true) & GPIO_PIN_3) {
 
-        GPIOIntClear(GPIO_PORTA_BASE, GPIO_PIN_3);
+    if (GPIOIntStatus(GPIO_PORTA_BASE, true) & GPIO_PIN_3) {
         xSemaphoreGiveFromISR(encoderSemaphoreB, &xHigherPriorityTaskWoken);
+        GPIOIntClear(GPIO_PORTA_BASE, GPIO_PIN_3);
     }
 
     if (GPIOIntStatus(GPIO_PORTA_BASE, true) & GPIO_PIN_5) {
+        xSemaphoreGiveFromISR(BarraSemaphore, &xHigherPriorityTaskWoken);
         GPIOIntClear(GPIO_PORTA_BASE, GPIO_PIN_5);
-        TriggerBarraEvent();
+    }
+
+    if (GPIOIntStatus(GPIO_PORTA_BASE, true) & GPIO_PIN_7) {
+        xSemaphoreGiveFromISR(FrontEdgeSemaphore, &xHigherPriorityTaskWoken);
+        UARTprintf("detectado! \n");
+        GPIOIntClear(GPIO_PORTA_BASE, GPIO_PIN_5);
     }
 
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
-
-
-
-
 
