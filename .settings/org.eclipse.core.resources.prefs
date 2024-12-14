@@ -210,4 +210,6 @@ encoding//Release/usblib/subdir_vars.mk=UTF-8
 encoding//Release/utils/subdir_rules.mk=UTF-8
 encoding//Release/utils/subdir_vars.mk=UTF-8
 encoding//driver_microbot/configADC.c=UTF-8
+encoding//driver_microbot/pid.c=UTF-8
 encoding/commands.c=UTF-8
+encoding/main.c=UTF-8

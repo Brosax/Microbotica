@@ -348,6 +348,7 @@ static int Cmd_Move(int argc, char *argv[])
     else
     {
         C=strtof(argv[1], NULL);
+
         mover_robot(&C);
 
     }

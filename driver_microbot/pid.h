@@ -12,9 +12,9 @@
 #define MIN_PWM -100
 
 
-#define RADIO 2.9f  // Wheel radius in cm
+#define RADIO 3.0f  // Wheel radius in cm
 #define L 10  //distancia entre las ruedas
-#define Convertir_Angulo (360.0f / (2.0f * M_PI))
+#define Convertir_Angulo 57.29f //360.0f / (2.0f * M_PI)
 #define Resolucion 20 //en grado
 //#define Resolucion 26 //en grado
 

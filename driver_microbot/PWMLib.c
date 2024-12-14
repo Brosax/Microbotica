@@ -125,14 +125,14 @@ void stop()
 
 int mover_robot(float c) {
 
-    Robot_Move_PID(&pidA, &pidB,c,0.01f);
+    Robot_Move_PID(&pidA, &pidB,c,0);
 
     return 0;
 }
 
 int girar_robot(float g)
 {
-    Rotate_Robot_PID(&pidA, &pidB,g,0.01f);
+    Rotate_Robot_PID(&pidA, &pidB,g,0);
 
     return 0;
 }
