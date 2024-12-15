@@ -35,16 +35,50 @@
 #define ADC_TASK_PRIORITY (tskIDLE_PRIORITY+1)
 #define SW_TASK_PRIO (tskIDLE_PRIORITY+1)           // Prioridad para la tarea SW1TASK
 #define SW_TASK_STACK_SIZE (256)                    // Tamanio de pila para la tarea SW1TASK
-//#define wheelTASKPRIO (tskIDLE_PRIORITY+1)          // Prioridad para la tarea wheelTASK
-//#define wheelTASKSTACKSIZE (256)                    // Tamanio de pila para la tarea wheelTASK
 
 
 #define RADIO 3.0f  // Wheel radius in cm
-//#define Convertir_Angulo (360.0f / (2.0f * M_PI))
 #define Convertir_Angulo 57.29f //360.0f / (2.0f * M_PI)
 #define Resolucion 20 //en grado
-
 #define L 10    //Separaci¨®n entre ruedas
+// 表大小
+#define TABLE_SIZE (sizeof(lookupTable) / sizeof(LookupTableEntry))
+// 定义查找表的结构
+typedef struct {
+    int32_t distancia;    // 距离
+    int32_t adcValue;     // ADC 值
+} LookupTableEntry;
+
+// 定义查找表
+const LookupTableEntry lookupTable[] = {
+    {3, 3600},
+    {4, 3400},
+    {5, 2857},
+    {6, 2199},
+    {7, 2000},
+    {8, 1750},
+    {9, 1550},
+    {10, 1449},
+    {11, 1300},
+    {12, 1200},
+    {13, 1100},
+    {14, 1023},
+    {15, 950},
+    {16, 905},
+    {18, 806},
+    {20, 708},
+    {22, 632},
+    {24, 584},
+    {26, 539},
+    {30, 450},
+    {35, 337},
+    {40, 294},
+};
+
+
+
+
+
 
 //Globales
 volatile uint32_t g_ui32CPUUsage;
@@ -167,13 +201,25 @@ void Setup_Hardware(void){
 
     MAP_GPIOIntTypeSet(GPIO_PORTA_BASE, GPIO_PIN_2|GPIO_PIN_3, GPIO_BOTH_EDGES); // Configure interrupt on both rising and falling edges
 
+
+
     MAP_GPIOIntTypeSet(GPIO_PORTA_BASE, GPIO_PIN_5, GPIO_RISING_EDGE); // Configure interrupt rising edges ,barra frontal.
-    MAP_GPIOIntTypeSet(GPIO_PORTA_BASE, GPIO_PIN_7, GPIO_RISING_EDGE); // sensor suelo frontal
+
+    MAP_GPIOPadConfigSet(GPIO_PORTA_BASE, GPIO_PIN_7,GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_STD_WPD);
+
+    MAP_GPIOIntTypeSet(GPIO_PORTA_BASE, GPIO_PIN_7, GPIO_HIGH_LEVEL);
+
+    //MAP_GPIOIntTypeSet(GPIO_PORTA_BASE, GPIO_PIN_7, GPIO_RISING_EDGE); // sensor suelo frontal
 
     MAP_GPIOIntEnable(GPIO_PORTA_BASE,GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_5|GPIO_PIN_7);
     MAP_IntEnable(INT_GPIOA);
 
 
+    // 配置定时器
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER0);
+    TimerConfigure(TIMER0_BASE, TIMER_CFG_ONE_SHOT);
+    TimerIntEnable(TIMER0_BASE, TIMER_TIMA_TIMEOUT);
+    IntEnable(INT_TIMER0A);
 
 
     miSemaforo  = xSemaphoreCreateBinary();
@@ -221,7 +267,6 @@ void Setup_Hardware(void){
 
 
 
-
 int lazocerado()
 {
     mover_robot(15);
@@ -250,68 +295,99 @@ int lazocerado()
 
 
 //Funcion de leer sensor de distancia y enciende led
-static portTASK_FUNCTION(ADCTask,pvParameters)
-{
+//static portTASK_FUNCTION(ADCTask,pvParameters)
+//{
+//
+//    MuestrasADCsensor muestras;
+//  //  MESSAGE_ADC_SAMPLE_PARAMETER parameter;
+//    int distancia = 1110 ;
+//
+//    //
+//    // Bucle infinito, las tareas en FreeRTOS no pueden "acabar", deben "matarse" con la funcion xTaskDelete().
+//    //
+//    while(1)
+//    {
+//        configADC_LeeADC(&muestras);    //Espera y lee muestras del ADC (BLOQUEANTE)
+//
+//
+//
+//        if( muestras.chan2 < 3420 && muestras.chan2 > 899)
+//        {
+//            distancia = -(muestras.chan2 - 3614) / 179.08;
+//        }
+//
+//        else if( muestras.chan2 < 900 && muestras.chan2 > 286)
+//        {
+//            distancia = -(muestras.chan2 - 1222.6) / 24.853;
+//        }
+//        else
+//        {
+//            distancia = 111111;
+//        }
+//
+//        UARTprintf("distancia %d RAW %d \r\n",distancia ,muestras.chan2);
+//
+//
+//        if (distancia >= 5 && distancia < 10 )
+//        {
+//            // cm se enciende el led verde PF3
+//            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3,0x00000008);
+//        }
+//        else if (distancia >= 10 && distancia < 15 )
+//        {
+//                    // cm se enciende el led rojo PF1
+//            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3,0x00000002);
+//
+//            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1,0x00000002);
+//
+//        }
+//        else if (distancia >= 15 && distancia <= 20 )
+//        {
+//                    //  cm se encienden ambos leds rojo y verde
+//            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1 ,0x00000002);
+//            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_3,0x00000008);
+//        }
+//        else
+//        {
+//            //los leds permanecen apagados
+//            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3,0);
+//        }
+//
+//    }
+//}
 
+static portTASK_FUNCTION(ADCTask, pvParameters) {
     MuestrasADCsensor muestras;
-  //  MESSAGE_ADC_SAMPLE_PARAMETER parameter;
-    double distancia = 1110 ;
+    int distancia = 111111;
 
-    //
-    // Bucle infinito, las tareas en FreeRTOS no pueden "acabar", deben "matarse" con la funcion xTaskDelete().
-    //
-    while(1)
-    {
-        configADC_LeeADC(&muestras);    //Espera y lee muestras del ADC (BLOQUEANTE)
+    while (1) {
+        configADC_LeeADC(&muestras);  // 获取ADC结果
 
-        //UARTprintf("%d %d %d\r\n",muestras.chan1 ,muestras.chan2 , muestras.chan8);
-
-        if( muestras.chan2 < 3420 && muestras.chan2 > 899)
+        // 遍历映射表，找到匹配的范围
+        int i = 0;
+        for (i = 0; i < TABLE_SIZE; i++)
         {
-            distancia = -(muestras.chan2 - 3614) / 179.08;
+            if (muestras.chan2 >= lookupTable[i].adcValue) {
+                distancia = lookupTable[i].distancia;
+                break;
+            }
         }
 
-        else if( muestras.chan2 < 900 && muestras.chan2 > 286)
-        {
-            distancia = -(muestras.chan2 - 1222.6) / 24.853;
+        UARTprintf("distancia %d RAW %d \r\n", distancia, muestras.chan2);
+
+        // 基于距离设置LED状态
+        if (distancia >= 5 && distancia < 10) {
+            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3, 0x00000008);  // 绿色LED
+        } else if (distancia >= 10 && distancia < 15) {
+            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3, 0x00000002);  // 红色LED
+        } else if (distancia >= 15 && distancia <= 20) {
+            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1, 0x00000002);  // 红色LED
+            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_3, 0x00000008);  // 绿色LED
+        } else {
+            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3, 0);  // 关闭LED
         }
-        else
-        {
-            distancia = 111111;
-        }
-
-
-
-
-        if (distancia >= 5 && distancia < 10 )
-        {
-            // cm se enciende el led verde PF3
-            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3,0x00000008);
-        }
-        else if (distancia >= 10 && distancia < 15 )
-        {
-                    // cm se enciende el led rojo PF1
-            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3,0x00000002);
-
-            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1,0x00000002);
-
-        }
-        else if (distancia >= 15 && distancia <= 20 )
-        {
-                    //  cm se encienden ambos leds rojo y verde
-            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1 ,0x00000002);
-            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_3,0x00000008);
-        }
-        else
-        {
-            //los leds permanecen apagados
-            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3,0);
-        }
-
     }
 }
-
-
 
 
 
@@ -320,7 +396,6 @@ static portTASK_FUNCTION(ADCTask,pvParameters)
 static portTASK_FUNCTION(Switch1Task,pvParameters)
 {
     TickType_t xLastWakeTime ;
-    xSemaphoreTake(miSemaforo,portMAX_DELAY);
     //
     // Loop forever.
     //
@@ -360,7 +435,6 @@ static portTASK_FUNCTION(Switch1Task,pvParameters)
 
 static portTASK_FUNCTION(Switch2Task,pvParameters)
 {
-    xSemaphoreTake(miSemaforo2,portMAX_DELAY);
     //
     // Loop forever.
     //
@@ -376,7 +450,7 @@ static portTASK_FUNCTION(Switch2Task,pvParameters)
 
 static portTASK_FUNCTION(BarraTask,pvParameters)
 {
-    xSemaphoreTake(BarraSemaphore,portMAX_DELAY);
+    //xSemaphoreTake(BarraSemaphore,portMAX_DELAY);
     TickType_t ui32LastTime;
     //
     // Loop forever.
@@ -392,6 +466,22 @@ static portTASK_FUNCTION(BarraTask,pvParameters)
     }
 }
 
+
+
+static portTASK_FUNCTION(sueloTask,pvParameters)
+{
+    //xSemaphoreTake(FrontEdgeSemaphore,portMAX_DELAY);
+    //
+    // Loop forever.
+    //
+    while(1)
+    {
+        xSemaphoreTake(FrontEdgeSemaphore,portMAX_DELAY);
+        UARTprintf("detectado! \n" );
+        //GPIOIntEnable(GPIO_PORTA_BASE, GPIO_PIN_7);
+
+    }
+}
 
 
 //*****************************************************************************
@@ -432,6 +522,11 @@ int main(void)
     }
 
     if((xTaskCreate(BarraTask,(portCHAR *) "BarraTask",SW_TASK_STACK_SIZE, NULL,SW_TASK_PRIO, NULL) != pdTRUE))
+    {
+        while(1);
+    }
+
+    if((xTaskCreate(sueloTask,(portCHAR *) "sueloTask",SW_TASK_STACK_SIZE, NULL,SW_TASK_PRIO, NULL) != pdTRUE))
     {
         while(1);
     }
@@ -478,26 +573,47 @@ void encoderInterruptHandler(void) {
 
     // Check which pin triggered the interrupt and give the corresponding semaphore
     if (GPIOIntStatus(GPIO_PORTA_BASE, true) & GPIO_PIN_2) {
-        xSemaphoreGiveFromISR(encoderSemaphoreA, &xHigherPriorityTaskWoken);
         GPIOIntClear(GPIO_PORTA_BASE, GPIO_PIN_2);
+        xSemaphoreGiveFromISR(encoderSemaphoreA, &xHigherPriorityTaskWoken);
+
     }
 
     if (GPIOIntStatus(GPIO_PORTA_BASE, true) & GPIO_PIN_3) {
-        xSemaphoreGiveFromISR(encoderSemaphoreB, &xHigherPriorityTaskWoken);
         GPIOIntClear(GPIO_PORTA_BASE, GPIO_PIN_3);
+        xSemaphoreGiveFromISR(encoderSemaphoreB, &xHigherPriorityTaskWoken);
+
     }
 
     if (GPIOIntStatus(GPIO_PORTA_BASE, true) & GPIO_PIN_5) {
-        xSemaphoreGiveFromISR(BarraSemaphore, &xHigherPriorityTaskWoken);
         GPIOIntClear(GPIO_PORTA_BASE, GPIO_PIN_5);
+        xSemaphoreGiveFromISR(BarraSemaphore, &xHigherPriorityTaskWoken);
+
     }
 
     if (GPIOIntStatus(GPIO_PORTA_BASE, true) & GPIO_PIN_7) {
+        GPIOIntClear(GPIO_PORTA_BASE, GPIO_PIN_7);
         xSemaphoreGiveFromISR(FrontEdgeSemaphore, &xHigherPriorityTaskWoken);
-        UARTprintf("detectado! \n");
-        GPIOIntClear(GPIO_PORTA_BASE, GPIO_PIN_5);
+
+        GPIOIntDisable(GPIO_PORTA_BASE, GPIO_PIN_7);
+
+        TimerLoadSet(TIMER0_BASE, TIMER_A, SysCtlClockGet() / 1000 * 500);
+        TimerEnable(TIMER0_BASE, TIMER_A);
     }
 
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+
+void Timer0Handler(void) {
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    TimerIntClear(TIMER0_BASE, TIMER_TIMA_TIMEOUT); // 清除中断标志
+    GPIOIntEnable(GPIO_PORTA_BASE, GPIO_PIN_7);
+    // 检查传感器引脚状态是否稳定
+//    if (GPIOIntStatus(GPIO_PORTA_BASE, true) & GPIO_PIN_7) {
+//        // 确认传感器状态稳定，执行操作
+//
+//       // xSemaphoreGiveFromISR(FrontEdgeSemaphore, &xHigherPriorityTaskWoken);
+//    }
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 

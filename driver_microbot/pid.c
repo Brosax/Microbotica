@@ -228,7 +228,6 @@ void SetMotorSpeed(uint8_t motor, int pwmValue) {
     }else{
         PWM2Set(pwmValue);
     }
-    //printf("Motor %d set to PWM %d\n", motor, pwmValue);
 }
 
 // Function to get encoder ticks
