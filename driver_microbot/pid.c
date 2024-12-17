@@ -8,7 +8,7 @@
 #include "semphr.h"
 
 extern SemaphoreHandle_t encoderSemaphoreA,encoderSemaphoreB;
-
+extern PIDController pidA, pidB;
 // PID initialization
 void PID_Init(PIDController *pid, float Kp, float Ki, float Kd) {
     pid->Kp = Kp;
@@ -240,4 +240,9 @@ uint32_t GetEncoderTicks(uint8_t motor) {
     }
 
     return 1;
+}
+
+void SetPID(float kp){
+    PID_Init(&pidA, kp, 0.0f, 0.0f);
+    PID_Init(&pidB, kp, 0.0f, 0.0f);
 }

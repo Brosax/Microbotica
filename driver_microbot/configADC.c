@@ -16,7 +16,10 @@
 #include "FreeRTOS.h"
 #include "queue.h"
 
-static QueueHandle_t cola_adc_sensor;
+volatile uint32_t latestADCValue = 0;
+volatile uint32_t latestEDGEValue = 0;
+
+//static QueueHandle_t cola_adc_sensor;
 uint8_t Fs = 5;  // Sampling frequency in Hz
 
 void ADCTimerInit(void){
@@ -40,91 +43,92 @@ void configADC_IniciaADC(void)
     // Configure timer to trigger ADC conversions
     ADCTimerInit();
 
-    // Enable ADC0 and GPIO ports D and E
+    // Enable ADC0 and GPIO ports E
     SysCtlPeripheralEnable(SYSCTL_PERIPH_ADC0);
     SysCtlPeripheralSleepEnable(SYSCTL_PERIPH_ADC0);
-    //HABILITAMOS EL GPIOE
+
+    // Habilitamos el GPIOE
     SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);
     SysCtlPeripheralSleepEnable(SYSCTL_PERIPH_GPIOE);
-    //HABILITAMOS EL GPIOD
-    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOD);
-    SysCtlPeripheralSleepEnable(SYSCTL_PERIPH_GPIOD);
 
-    // Configure GPIO pins for ADC input
-    GPIOPinTypeADC(GPIO_PORTE_BASE, GPIO_PIN_5 | GPIO_PIN_3 | GPIO_PIN_2 | GPIO_PIN_1 | GPIO_PIN_0); //PE0-PE3
-    GPIOPinTypeADC(GPIO_PORTD_BASE, GPIO_PIN_3 | GPIO_PIN_2 | GPIO_PIN_0);// PD2-PD3
+    // Configure GPIO pins for ADC input (PE1, PE2, PE3)
+    GPIOPinTypeADC(GPIO_PORTE_BASE, GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3);
 
-    // Disable sequence 0 during configuration
-    ADCSequenceDisable(ADC0_BASE, 0);
+    // Disable sequence 1 during configuration
+    ADCSequenceDisable(ADC0_BASE, 1);
 
-    //Configuramos la velocidad de conversion al maximo (1MS/s)
+    // Configuramos la velocidad de conversion al maximo (1MS/s)
     ADCClockConfigSet(ADC0_BASE, ADC_CLOCK_RATE_FULL, 1);
 
-    ADCSequenceConfigure(ADC0_BASE, 0, ADC_TRIGGER_TIMER, 1); //Disparo  (timer trigger)
+    // Configure ADC sequence 1 for timer trigger
+    ADCSequenceConfigure(ADC0_BASE, 1, ADC_TRIGGER_TIMER, 0); // Priority 0
 
-    ADCSequenceStepConfigure(ADC0_BASE, 0, 0, ADC_CTL_CH0);
-    ADCSequenceStepConfigure(ADC0_BASE, 0, 1, ADC_CTL_CH1);
-    ADCSequenceStepConfigure(ADC0_BASE, 0, 2, ADC_CTL_CH2);
-    ADCSequenceStepConfigure(ADC0_BASE, 0, 3, ADC_CTL_CH3);
-    ADCSequenceStepConfigure(ADC0_BASE, 0, 4, ADC_CTL_CH4);
-    ADCSequenceStepConfigure(ADC0_BASE, 0, 5, ADC_CTL_CH5);
-    ADCSequenceStepConfigure(ADC0_BASE, 0, 6, ADC_CTL_CH6);
-    ADCSequenceStepConfigure(ADC0_BASE, 0, 7, ADC_CTL_CH7 | ADC_CTL_IE | ADC_CTL_END); //La ultima muestra provoca la interrupcion
+    // Configuramos los pasos para PE3 (AIN0), PE2 (AIN1), PE1 (AIN2)
+    ADCSequenceStepConfigure(ADC0_BASE, 1, 0, ADC_CTL_CH0);                      // Step 0 → PE3 (AIN0)
+    ADCSequenceStepConfigure(ADC0_BASE, 1, 1, ADC_CTL_CH1);                      // Step 1 → PE2 (AIN1)
+    ADCSequenceStepConfigure(ADC0_BASE, 1, 2, ADC_CTL_CH2);                      // Step 2 → PE1 (AIN2)
+    ADCSequenceStepConfigure(ADC0_BASE, 1, 3, ADC_CTL_CH2 | ADC_CTL_IE | ADC_CTL_END); // Step 3 → PE1 (AIN2) + End + Interrupt Enable
 
-    ADCSequenceEnable(ADC0_BASE, 0); //ACTIVO LA SECUENCIA
+    // Enable sequence 1
+    ADCSequenceEnable(ADC0_BASE, 1);
 
-    // Enable hardware oversampling
-    ADCHardwareOversampleConfigure(ADC0_BASE,64);
+    // Enable hardware oversampling for better precision
+    ADCHardwareOversampleConfigure(ADC0_BASE, 64);
 
-    IntPrioritySet(INT_ADC0SS0, configMAX_SYSCALL_INTERRUPT_PRIORITY);
-    ADCIntRegister(ADC0_BASE, 0, configADC_ISR);
-    //Habilitar interrupcion por parte del ADC
-    ADCIntEnable(ADC0_BASE, 0);
-    IntEnable(INT_ADC0SS0);
+    // Configura la prioridad e interrupciones
+    IntPrioritySet(INT_ADC0SS1, configMAX_SYSCALL_INTERRUPT_PRIORITY);
+    ADCIntRegister(ADC0_BASE, 1, configADC_ISR); // Registrar ISR para sequencer 1
+    ADCIntEnable(ADC0_BASE, 1);                  // Habilitar interrupciones
+    IntEnable(INT_ADC0SS1);
 
 
-    cola_adc_sensor  = xQueueCreate(8, sizeof(MuestrasADCsensor));
-    if (cola_adc_sensor  == NULL)
-    {
-        while (1)
-            ;
-    }
+//    cola_adc_sensor  = xQueueCreate(8, sizeof(uint32_t));
+//    if (cola_adc_sensor  == NULL)
+//    {
+//        while (1)
+//            ;
+//    }
 
     IntMasterEnable();
 }
 
-void configADC_LeeADC(MuestrasADCsensor *datos)
-{
-    xQueueReceive(cola_adc_sensor , datos, portMAX_DELAY);
-}
+//void configADC_LeeADC(uint32_t *datos)
+//{
+//    xQueueReceive(cola_adc_sensor , datos, portMAX_DELAY);
+//}
 
+//void configADC_ISR(void)
+//{
+//    portBASE_TYPE higherPriorityTaskWoken = pdFALSE;
+//
+//    uint32_t leidas;
+//    uint32_t finales;
+//
+//    // Borra la interrupcion de Timer y del ADC
+//    ADCIntClear(ADC0_BASE, 3);
+//    TimerIntClear(TIMER2_BASE, TIMER_TIMA_TIMEOUT);
+//
+//    ADCSequenceDataGet(ADC0_BASE, 3, (uint32_t*) &leidas); //COGEMOS LOS DATOS GUARDADOS
+//
+//    //Pasamos de 32 bits a 16 (el conversor es de 12 bits, as� que s髄o son significativos los bits del 0 al 11)
+//    finales = leidas;
+//
+//    //Guardamos en la cola
+//    xQueueSendFromISR(cola_adc_sensor , &finales, &higherPriorityTaskWoken);
+//    portEND_SWITCHING_ISR(higherPriorityTaskWoken);
+//}
 void configADC_ISR(void)
 {
-    portBASE_TYPE higherPriorityTaskWoken = pdFALSE;
 
-    MuestrasLeidasADCsensor leidas;
-    MuestrasADCsensor finales;
-
+    uint32_t leidas[4];
     // Borra la interrupcion de Timer y del ADC
-    ADCIntClear(ADC0_BASE, 0);
-    TimerIntClear(TIMER2_BASE, TIMER_TIMA_TIMEOUT);
+    ADCIntClear(ADC0_BASE, 1);
+    ADCSequenceDataGet(ADC0_BASE, 1, leidas); //COGEMOS LOS DATOS GUARDADOS
+    latestADCValue = leidas[0];
+    latestEDGEValue = leidas[1];
 
-    ADCSequenceDataGet(ADC0_BASE, 0, (uint32_t*) &leidas); //COGEMOS LOS DATOS GUARDADOS
-
-    //Pasamos de 32 bits a 16 (el conversor es de 12 bits, as� que s髄o son significativos los bits del 0 al 11)
-    finales.chan1 = leidas.chan1;
-    finales.chan2 = leidas.chan2;
-    finales.chan3 = leidas.chan3;
-    finales.chan4 = leidas.chan4;
-    finales.chan5 = leidas.chan5;
-    finales.chan6 = leidas.chan6;
-    finales.chan7 = leidas.chan7;
-    finales.chan8 = leidas.chan8;
-
-    //Guardamos en la cola
-    xQueueSendFromISR(cola_adc_sensor , &finales, &higherPriorityTaskWoken);
-    portEND_SWITCHING_ISR(higherPriorityTaskWoken);
 }
+
 
 void CambiarFrecuencia(float freq)
 {

@@ -34,5 +34,5 @@ void Robot_Move_PID(PIDController *pidA, PIDController *pidB, int32_t distance, 
 int Rotate_Robot_PID(PIDController *pidA, PIDController *pidB, int32_t angle, float deltaTime);
 void SetMotorSpeed(uint8_t motor, int pwmValue);
 uint32_t GetEncoderTicks(uint8_t motor);
-
+void SetPID(float kp);
 #endif // PID_H

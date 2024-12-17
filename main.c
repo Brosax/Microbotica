@@ -35,12 +35,15 @@
 #define ADC_TASK_PRIORITY (tskIDLE_PRIORITY+1)
 #define SW_TASK_PRIO (tskIDLE_PRIORITY+1)           // Prioridad para la tarea SW1TASK
 #define SW_TASK_STACK_SIZE (256)                    // Tamanio de pila para la tarea SW1TASK
-
+#define stateMachineTaskTASKPRIO (tskIDLE_PRIORITY + 1) // Prioridad para la tarea stateMachineTask
+#define stateMachineTaskTASKSTACKSIZE (256)             // Tamaï¿½o de pila para la tarea stateMachineTask
 
 #define RADIO 3.0f  // Wheel radius in cm
 #define Convertir_Angulo 57.29f //360.0f / (2.0f * M_PI)
 #define Resolucion 20 //en grado
 #define L 10    //Separaci¨®n entre ruedas
+#define RadioCircle 35.0f;
+
 // 表大小
 #define TABLE_SIZE (sizeof(lookupTable) / sizeof(LookupTableEntry))
 // 定义查找表的结构
@@ -76,26 +79,67 @@ const LookupTableEntry lookupTable[] = {
 };
 
 
+//maquina de estado
+typedef enum
+{
+    STATE_IDLE,
+    STATE_MAPPING,
+    STATE_PROCESSING,
+    STATE_ATTACK,
+    STATE_ERROR
+} State;
 
+typedef enum
+{
+    EVENT_START,
+    EVENT_STOP,
+    EVENT_OBSTACLE_SEARCH,
+    EVENT_OBSTACLE_ZONE,
+    EVENT_OBSTACLE_TARGET,
+    EVENT_FRONT_WHITE,
+    EVENT_BACK_WHITE,
+    EVENT_ZONE_WHITE,
+    EVENT_ERROR,
+    EVENT_NONE
+} Event;
 
+const char *stateStrings[] = {
+    "STATE_IDLE",
+    "STATE_MAPPING",
+    "STATE_PROCESSING",
+    "STATE_ATTACK",
+    "STATE_ERROR"
+};
 
+const char *eventStrings[] = {
+    "EVENT_START",
+    "EVENT_STOP",
+    "EVENT_OBSTACLE_SEARCH",
+    "EVENT_OBSTACLE_ZONE",
+    "EVENT_OBSTACLE_TARGET",
+    "EVENT_FRONT_WHITE",
+    "EVENT_BACK_WHITE",
+    "EVENT_ZONE_WHITE",
+    "EVENT_ERROR"
+};
 
 //Globales
 volatile uint32_t g_ui32CPUUsage;
 volatile uint32_t g_ulSystemClock;
 volatile uint32_t g_ulSystemClock2;
-
+volatile Event highPriorityEvent = EVENT_NONE;  // 默认无高优先级事件
+extern volatile uint32_t latestADCValue;
+extern volatile uint32_t latestEDGEValue;
+//PID
 PIDController pidA, pidB;
 
+// Variables de posiciï¿½n actual
+float posX = 0.0;
+float posY = 0.0;
+float angulo_actual = 0.0; // En grados
 
-//float x = 0.5;  // Valor X del joystick
-//float y = 0.3;  // Valor Y del joystick
-//
-//int motor1 = 0;
-//int motor2 = 0;
-
-
-
+//Handles
+QueueHandle_t eventQueue,EdgeQueue;
 SemaphoreHandle_t miSemaforo,miSemaforo2,FrontEdgeSemaphore;
 SemaphoreHandle_t encoderSemaphoreA,encoderSemaphoreB,BarraSemaphore;
 //*****************************************************************************
@@ -202,11 +246,9 @@ void Setup_Hardware(void){
     MAP_GPIOIntTypeSet(GPIO_PORTA_BASE, GPIO_PIN_2|GPIO_PIN_3, GPIO_BOTH_EDGES); // Configure interrupt on both rising and falling edges
 
 
-
     MAP_GPIOIntTypeSet(GPIO_PORTA_BASE, GPIO_PIN_5, GPIO_RISING_EDGE); // Configure interrupt rising edges ,barra frontal.
 
-    MAP_GPIOPadConfigSet(GPIO_PORTA_BASE, GPIO_PIN_7,GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_STD_WPD);
-
+    MAP_GPIOPadConfigSet(GPIO_PORTA_BASE, GPIO_PIN_7,GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_STD_WPD);//suelo frontal
     MAP_GPIOIntTypeSet(GPIO_PORTA_BASE, GPIO_PIN_7, GPIO_HIGH_LEVEL);
 
     //MAP_GPIOIntTypeSet(GPIO_PORTA_BASE, GPIO_PIN_7, GPIO_RISING_EDGE); // sensor suelo frontal
@@ -222,69 +264,123 @@ void Setup_Hardware(void){
     IntEnable(INT_TIMER0A);
 
 
-    miSemaforo  = xSemaphoreCreateBinary();
-    miSemaforo2 = xSemaphoreCreateBinary();
-    FrontEdgeSemaphore = xSemaphoreCreateBinary();
-    encoderSemaphoreA = xSemaphoreCreateBinary();
-    encoderSemaphoreB = xSemaphoreCreateBinary();
-    BarraSemaphore = xSemaphoreCreateBinary();
-
-    if (encoderSemaphoreA == NULL || encoderSemaphoreB == NULL || BarraSemaphore == NULL ||miSemaforo == NULL || miSemaforo2 == NULL || FrontEdgeSemaphore == NULL ) {
-       while (1);
-    }
-
 
 }
 
-//int mover_robotM(int32_t distance)
-//{
-//    float targetTicks = ceil(((distance / RADIO )* Convertir_Angulo)/Resolucion);
-//
-//    int currentTicksA = 0;
-//    int currentTicksB = 0;
-//
-//    // Decide direction and move
-//    if (distance > 0) {
-//        Forward();
-//    } else if (distance < 0) {
-//        Back();
-//    }
-//
-//    while (abs(targetTicks) > currentTicksA && abs(targetTicks) > currentTicksB) {
-//
-//        xSemaphoreTake(encoderSemaphoreA, portMAX_DELAY);
-//        currentTicksA++;
-//
-//        xSemaphoreTake(encoderSemaphoreB, portMAX_DELAY);
-//        currentTicksB++;
-//
-//        UARTprintf("A = %d ,B = %d \r\n",currentTicksA,currentTicksB);
-//       }
-//    stop();
-//
-//    return 0;
-//}
+//************************State machine*********************************************//
+
+// Funciï¿½n para actualizar la posiciï¿½n del robot
+void actualizarPosicion(float distancia)
+{
+    float angulo_radianes = angulo_actual * M_PI / 180.0;
+    posX += distancia * cos(angulo_radianes);
+    posY += distancia * sin(angulo_radianes);
+}
 
 
+// Funciï¿½n para verificar si estï¿½ dentro del cï¿½rculo
+bool dentroDelCirculo()
+{
+    float distancia_centro = sqrt(posX * posX + posY * posY);
+    return distancia_centro <= RadioCircle;
+}
+
+// Function to send an event to the queue
+void sendEvent(Event event)
+{
+    if (eventQueue == NULL)
+    {
+        // Ensure the queue is created before using
+        return;
+    }
+
+    if (xQueueSend(eventQueue, &event, portMAX_DELAY) != pdPASS)
+    {
+
+        // Handle the error, e.g., log an error message
+    }
+    //UARTprintf("Evento %d\n",event);
+}
+
+int ADC_distancia(uint32_t muestraADC){
+        int i = 0;
+        int distancia = 40;
+        for (i = 0; i < TABLE_SIZE; i++)
+        {
+            if (latestADCValue >= lookupTable[i].adcValue) {
+                distancia = lookupTable[i].distancia;
+                break;
+            }
+        }
+        return distancia;
+}
+int EDGE_bool(uint32_t muestraADC){
+    return (muestraADC > 2800) ? 1 : 0;
+}
+
+void nexr_event(){
+    Event event;
+    int distancia = ADC_distancia(latestADCValue);
+    int edge = EDGE_bool(latestEDGEValue);
+
+
+    if (edge == 1) {
+//        highPriorityEvent = EVENT_FRONT_WHITE;
+        event = EVENT_FRONT_WHITE;
+
+//        UARTprintf("Edge Detected! Event = %d\n", event);
+        sendEvent(event);
+        return;
+    }
+
+    if (distancia >= 3 && distancia < 10) {
+        event = EVENT_OBSTACLE_TARGET;
+    }
+    else if (distancia >= 10 && distancia < 20) {
+        event = EVENT_OBSTACLE_ZONE;
+    }
+    else if (distancia >= 20) {
+        event = EVENT_OBSTACLE_SEARCH;
+    }
+
+//    UARTprintf("Distancia = %d, Event = %d\n", distancia, event);
+    sendEvent(event);
+}
+
+void delay(uint32_t time_ms){
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(time_ms));
+}
+
+
+//**************************************************************************************************//
 
 int lazocerado()
 {
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
     mover_robot(15);
-
-    girar_robot(-95);
-
+    xLastWakeTime = xTaskGetTickCount();
+    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
+    girar_robot(-90);
+    xLastWakeTime = xTaskGetTickCount();
+    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
     mover_robot(15);
-
-    girar_robot(-95);
-
+    xLastWakeTime = xTaskGetTickCount();
+    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
+    girar_robot(-90);
+    xLastWakeTime = xTaskGetTickCount();
+    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
     mover_robot(15);
-
-    girar_robot(-95);
-
+    xLastWakeTime = xTaskGetTickCount();
+    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
+    girar_robot(-90);
+    xLastWakeTime = xTaskGetTickCount();
+    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
     mover_robot(15);
-
-    girar_robot(-95);
-
+    xLastWakeTime = xTaskGetTickCount();
+    vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
+    girar_robot(-90);
     return 0;
 }
 //*****************************************************************************
@@ -293,101 +389,82 @@ int lazocerado()
 //
 //*****************************************************************************
 
-
-//Funcion de leer sensor de distancia y enciende led
-//static portTASK_FUNCTION(ADCTask,pvParameters)
-//{
 //
-//    MuestrasADCsensor muestras;
-//  //  MESSAGE_ADC_SAMPLE_PARAMETER parameter;
-//    int distancia = 1110 ;
-//
-//    //
-//    // Bucle infinito, las tareas en FreeRTOS no pueden "acabar", deben "matarse" con la funcion xTaskDelete().
-//    //
-//    while(1)
-//    {
-//        configADC_LeeADC(&muestras);    //Espera y lee muestras del ADC (BLOQUEANTE)
-//
-//
-//
-//        if( muestras.chan2 < 3420 && muestras.chan2 > 899)
+//static portTASK_FUNCTION(ADCTask, pvParameters) {
+////    uint32_t muestras;
+////    //TickType_t ui32LastTime_ADC;
+//   int distancia = 111111;
+//   //int index = 0;
+//   Event event , eventant;
+//    while (1) {
+////        configADC_LeeADC(&muestras);  // 获取ADC结果
+////
+////        // 遍历映射表，找到匹配的范围
+//        int i = 0;
+//        for (i = 0; i < TABLE_SIZE; i++)
 //        {
-//            distancia = -(muestras.chan2 - 3614) / 179.08;
+//            if (latestADCValue >= lookupTable[i].adcValue) {
+//                distancia = lookupTable[i].distancia;
+//                break;
+//            }
 //        }
 //
-//        else if( muestras.chan2 < 900 && muestras.chan2 > 286)
-//        {
-//            distancia = -(muestras.chan2 - 1222.6) / 24.853;
-//        }
-//        else
-//        {
-//            distancia = 111111;
-//        }
-//
-//        UARTprintf("distancia %d RAW %d \r\n",distancia ,muestras.chan2);
+////        //UARTprintf("distancia %d RAW %d \r\n", distancia, muestras.chan2);
+////
+//        //mandar diferente evento dependiente de la distancias detectada
 //
 //
-//        if (distancia >= 5 && distancia < 10 )
-//        {
-//            // cm se enciende el led verde PF3
-//            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3,0x00000008);
-//        }
-//        else if (distancia >= 10 && distancia < 15 )
-//        {
-//                    // cm se enciende el led rojo PF1
-//            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3,0x00000002);
 //
-//            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1,0x00000002);
+//        if (distancia >= 3 && distancia < 10)
+//        {
+//           event = EVENT_OBSTACLE_TARGET;
+//           //sendEvent(event);
+//           GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3, 0x00000008);
+//        }
+//        else if (distancia >= 10 && distancia < 20)
+//        {
+//           event = EVENT_OBSTACLE_ZONE;
+//           //sendEvent(event);
+//           GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3, 0x00000002);
+//           GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1, 0x00000002);
+//        }
+//        else if (distancia >= 20 && distancia < 40)
+//        {
+//           event = EVENT_OBSTACLE;
+//           //sendEvent(event);
+//           GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1, 0x00000002);
+//           GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_3, 0x00000008);
+//        }
+//        else if (distancia >= 40)
+//        {
+//           event = EVENT_OBSTACLE_SEARCH;
+//           //sendEvent(event);
+//           GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3, 0);
 //
 //        }
-//        else if (distancia >= 15 && distancia <= 20 )
-//        {
-//                    //  cm se encienden ambos leds rojo y verde
-//            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1 ,0x00000002);
-//            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_3,0x00000008);
-//        }
-//        else
-//        {
-//            //los leds permanecen apagados
-//            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3,0);
-//        }
 //
+//        //index = index + 1;
+//        if(!(eventant==event)){
+//            sendEvent(event);
+//            //index = 0;
+//        }
+//        eventant=event;
+//
+//
+//        // 基于距离设置LED状态
+////        if (distancia >= 5 && distancia < 10) {
+////            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3, 0x00000008);  // 绿色LED
+////        } else if (distancia >= 10 && distancia < 15) {
+////            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3, 0x00000002);  // 红色LED
+////        } else if (distancia >= 15 && distancia <= 20) {
+////            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1, 0x00000002);  // 红色LED
+////            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_3, 0x00000008);  // 绿色LED
+////        } else {
+////            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3, 0);  // 关闭LED
+////        }
+//       // UARTprintf("distancia %d RAW %d \r\n", distancia);
 //    }
 //}
-
-static portTASK_FUNCTION(ADCTask, pvParameters) {
-    MuestrasADCsensor muestras;
-    int distancia = 111111;
-
-    while (1) {
-        configADC_LeeADC(&muestras);  // 获取ADC结果
-
-        // 遍历映射表，找到匹配的范围
-        int i = 0;
-        for (i = 0; i < TABLE_SIZE; i++)
-        {
-            if (muestras.chan2 >= lookupTable[i].adcValue) {
-                distancia = lookupTable[i].distancia;
-                break;
-            }
-        }
-
-        UARTprintf("distancia %d RAW %d \r\n", distancia, muestras.chan2);
-
-        // 基于距离设置LED状态
-        if (distancia >= 5 && distancia < 10) {
-            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3, 0x00000008);  // 绿色LED
-        } else if (distancia >= 10 && distancia < 15) {
-            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3, 0x00000002);  // 红色LED
-        } else if (distancia >= 15 && distancia <= 20) {
-            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1, 0x00000002);  // 红色LED
-            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_3, 0x00000008);  // 绿色LED
-        } else {
-            GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3, 0);  // 关闭LED
-        }
-    }
-}
 
 
 
@@ -395,41 +472,14 @@ static portTASK_FUNCTION(ADCTask, pvParameters) {
 //static void Switch1Task(void *pvParameters)
 static portTASK_FUNCTION(Switch1Task,pvParameters)
 {
-    TickType_t xLastWakeTime ;
+
     //
     // Loop forever.
     //
     while(1)
     {
         xSemaphoreTake(miSemaforo,portMAX_DELAY);
-        xLastWakeTime = xTaskGetTickCount();
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
-        mover_robot(15);
-        xLastWakeTime = xTaskGetTickCount();
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
-        girar_robot(-90);
-        xLastWakeTime = xTaskGetTickCount();
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
-        mover_robot(15);
-        xLastWakeTime = xTaskGetTickCount();
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
-        girar_robot(-90);
-        xLastWakeTime = xTaskGetTickCount();
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
-        mover_robot(15);
-        xLastWakeTime = xTaskGetTickCount();
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
-        girar_robot(-90);
-        xLastWakeTime = xTaskGetTickCount();
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
-        mover_robot(15);
-        xLastWakeTime = xTaskGetTickCount();
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
-        girar_robot(-90);
-
-
-
-
+        lazocerado();
     }
 }
 
@@ -438,10 +488,17 @@ static portTASK_FUNCTION(Switch2Task,pvParameters)
     //
     // Loop forever.
     //
+    Event event;
     while(1)
     {
-        xSemaphoreTake(miSemaforo2,portMAX_DELAY);
-        girar_robot(-90);
+        //char *mensaje = ("S2\r\n");
+        //UART1_SendString(mensaje); // Envï¿½a el mensaje
+
+        xSemaphoreTake(miSemaforo2, portMAX_DELAY);
+        event = EVENT_START;
+        sendEvent(event);
+
+
 
        //UARTprintf("He puesto botton drecha ye mandado mensaje\n");
     }
@@ -470,18 +527,207 @@ static portTASK_FUNCTION(BarraTask,pvParameters)
 
 static portTASK_FUNCTION(sueloTask,pvParameters)
 {
-    //xSemaphoreTake(FrontEdgeSemaphore,portMAX_DELAY);
+    xSemaphoreTake(FrontEdgeSemaphore,portMAX_DELAY);
     //
     // Loop forever.
     //
+    Event event;
     while(1)
     {
         xSemaphoreTake(FrontEdgeSemaphore,portMAX_DELAY);
+        event = EVENT_FRONT_WHITE;
+        xQueueSend(EdgeQueue, &event, portMAX_DELAY);
         UARTprintf("detectado! \n" );
         //GPIOIntEnable(GPIO_PORTA_BASE, GPIO_PIN_7);
 
     }
 }
+
+static portTASK_FUNCTION(ADCTask, pvParameters) {
+    while(1){
+    UARTprintf("\n    ADC = %d  suelo = %d    \n",latestADCValue,latestEDGEValue);
+    delay(500);
+    }
+}
+
+
+
+//state machine 2********************************************************************************************
+
+
+void stateMachineTask(void *pvParameters) {
+    State currentState = STATE_IDLE;  // 初始状态
+    Event currentEvent;
+
+    for (;;) {
+        // 检查高优先级事件
+        if (highPriorityEvent == EVENT_FRONT_WHITE) {
+            UARTprintf("High Priority Event: EVENT_FRONT_WHITE\n");
+            // 执行EVENT_FRONT_WHITE逻辑
+            mover_robot(-10);
+            delay(1000);
+            girar_robot(180);
+            delay(1500);
+
+            highPriorityEvent = EVENT_NONE;  // 清除高优先级事件
+            sendEvent(EVENT_OBSTACLE_SEARCH);
+            continue;  // 返回主循环，继续处理状态机
+        }
+        // 等待事件发生
+        if (xQueueReceive(eventQueue, &currentEvent, portMAX_DELAY) == pdPASS ||
+            xQueueReceive(EdgeQueue, &currentEvent, portMAX_DELAY) == pdPASS   ) {
+
+            if (currentEvent == EVENT_FRONT_WHITE) {
+               highPriorityEvent = EVENT_FRONT_WHITE;  // 设置高优先级事件
+               continue;  // 在下一次循环中立即执行
+            }
+
+            UARTprintf("currentState = %s        currentEvent = %s\n",
+                          stateStrings[currentState], eventStrings[currentEvent]);
+            switch (currentState) {
+                case STATE_IDLE:
+                    switch (currentEvent) {
+                        case EVENT_START:
+                            sendEvent(EVENT_START);
+                            currentState = STATE_MAPPING;
+                            break;
+                        default:
+                            break;
+                    }
+
+                    break;
+
+
+                case STATE_MAPPING:
+                    SetPID(15.0f);
+                    switch(currentEvent){
+                        case EVENT_FRONT_WHITE:
+                            mover_robot(-10);
+                            delay(1000);
+                            girar_robot(180);
+                            delay(1500);
+                            currentState = STATE_PROCESSING;
+                            sendEvent(EVENT_OBSTACLE_SEARCH);
+                        case EVENT_STOP:
+                            currentState = STATE_IDLE;
+                            break;
+                        case EVENT_ERROR:
+                            currentState = STATE_ERROR;
+                            break;
+                        case EVENT_START:
+                            mover_robot(20);
+                            delay(100);
+                            sendEvent(EVENT_OBSTACLE_SEARCH);
+                            currentState = STATE_PROCESSING;
+                            break;
+
+                        default:
+                            break;
+                    }
+                    break;
+
+
+                case STATE_PROCESSING:
+                    SetPID(15.0f);
+                    switch(currentEvent){
+                        case EVENT_FRONT_WHITE:
+                            mover_robot(-10);
+                            delay(100);
+                            girar_robot(180);
+                            delay(150);
+                            sendEvent(EVENT_OBSTACLE_SEARCH);
+
+                            break;
+                        case EVENT_STOP:
+                            currentState = STATE_IDLE;
+                            break;
+
+                        case EVENT_ERROR:
+                            currentState = STATE_ERROR;
+                            break;
+
+                        case EVENT_OBSTACLE_SEARCH:
+                            delay(20);
+                            girar_robot(15);
+                            delay(20);
+                            nexr_event();
+
+                            break;
+
+                        case EVENT_OBSTACLE_ZONE:
+                            girar_robot(-20);
+                            delay(50);
+                            mover_robot(5);
+                            delay(50);
+                            nexr_event();
+                            break;
+
+                        case EVENT_OBSTACLE_TARGET:
+                            sendEvent(EVENT_OBSTACLE_TARGET);
+                            currentState = STATE_ATTACK;
+                            break;
+
+
+                        default:
+                            break;
+
+                    }
+                    break;
+
+
+                case STATE_ATTACK:
+                    SetPID(30.0f);
+                    switch(currentEvent){
+                        case EVENT_FRONT_WHITE:
+                            mover_robot(-10);
+                            delay(50);
+                            girar_robot(180);
+                            delay(50);
+                            nexr_event();
+                            break;
+                        case EVENT_STOP:
+                            currentState = STATE_IDLE;
+                            break;
+
+                        case EVENT_ERROR:
+                            currentState = STATE_ERROR;
+                            break;
+                        case EVENT_OBSTACLE_TARGET:
+
+                            mover_robot(5);
+                            delay(200);
+                            sendEvent(EVENT_OBSTACLE_SEARCH);
+                            currentState = STATE_PROCESSING;
+                            break;
+                        case EVENT_OBSTACLE_SEARCH:
+                            currentState = STATE_PROCESSING;
+
+                            break;
+
+                        case EVENT_OBSTACLE_ZONE:
+                            currentState = STATE_PROCESSING;
+                            break;
+
+                    }
+                    break;
+
+                case STATE_ERROR:
+                    switch(currentEvent){
+                        case EVENT_STOP:
+                            currentState = STATE_IDLE;
+                            break;
+                    }
+                    break;
+
+                default:
+                    currentState = STATE_IDLE;
+                    break;
+            }
+        }
+    }
+}
+
+
 
 
 //*****************************************************************************
@@ -499,6 +745,21 @@ int main(void)
     PWMInit();
     configADC_IniciaADC();
 
+
+    eventQueue = xQueueCreate(10, sizeof(Event));
+    EdgeQueue = xQueueCreate(1, sizeof(Event));
+    miSemaforo  = xSemaphoreCreateBinary();
+    miSemaforo2 = xSemaphoreCreateBinary();
+    FrontEdgeSemaphore = xSemaphoreCreateBinary();
+    encoderSemaphoreA = xSemaphoreCreateBinary();
+    encoderSemaphoreB = xSemaphoreCreateBinary();
+    BarraSemaphore = xSemaphoreCreateBinary();
+
+    if (encoderSemaphoreA == NULL || encoderSemaphoreB == NULL || BarraSemaphore == NULL ||miSemaforo == NULL || miSemaforo2 == NULL || FrontEdgeSemaphore == NULL ) {
+       while (1);
+    }
+
+
 	/********************************      Creacion de tareas *********************/
 
 	//Tarea del interprete de comandos (commands.c)
@@ -507,10 +768,10 @@ int main(void)
         while(1);
     }
 
-	if((xTaskCreate(ADCTask, (portCHAR *)"ADC", ADC_TASK_STACK,NULL,ADC_TASK_PRIORITY, NULL) != pdTRUE))
-    {
-        while(1);
-    }
+//	if((xTaskCreate(ADCTask, (portCHAR *)"ADC", ADC_TASK_STACK,NULL,ADC_TASK_PRIORITY, NULL) != pdTRUE))
+//    {
+//        while(1);
+//    }
 
     if((xTaskCreate(Switch1Task,(portCHAR *) "Sw1",SW_TASK_STACK_SIZE, NULL,SW_TASK_PRIO, NULL) != pdTRUE))
     {
@@ -526,9 +787,15 @@ int main(void)
         while(1);
     }
 
-    if((xTaskCreate(sueloTask,(portCHAR *) "sueloTask",SW_TASK_STACK_SIZE, NULL,SW_TASK_PRIO, NULL) != pdTRUE))
+//    if((xTaskCreate(sueloTask,(portCHAR *) "sueloTask",SW_TASK_STACK_SIZE, NULL,SW_TASK_PRIO, NULL) != pdTRUE))
+//    {
+//        while(1);
+//    }
+
+    if ((xTaskCreate(stateMachineTask, (portCHAR *)"StateMachine", stateMachineTaskTASKSTACKSIZE, NULL, stateMachineTaskTASKPRIO, NULL) != pdTRUE))
     {
-        while(1);
+        while (1)
+            ;
     }
 
 	//
@@ -590,30 +857,26 @@ void encoderInterruptHandler(void) {
 
     }
 
-    if (GPIOIntStatus(GPIO_PORTA_BASE, true) & GPIO_PIN_7) {
-        GPIOIntClear(GPIO_PORTA_BASE, GPIO_PIN_7);
-        xSemaphoreGiveFromISR(FrontEdgeSemaphore, &xHigherPriorityTaskWoken);
-
-        GPIOIntDisable(GPIO_PORTA_BASE, GPIO_PIN_7);
-
-        TimerLoadSet(TIMER0_BASE, TIMER_A, SysCtlClockGet() / 1000 * 500);
-        TimerEnable(TIMER0_BASE, TIMER_A);
-    }
-
-    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-}
-
-
-void Timer0Handler(void) {
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    TimerIntClear(TIMER0_BASE, TIMER_TIMA_TIMEOUT); // 清除中断标志
-    GPIOIntEnable(GPIO_PORTA_BASE, GPIO_PIN_7);
-    // 检查传感器引脚状态是否稳定
 //    if (GPIOIntStatus(GPIO_PORTA_BASE, true) & GPIO_PIN_7) {
-//        // 确认传感器状态稳定，执行操作
+//        GPIOIntClear(GPIO_PORTA_BASE, GPIO_PIN_7);
+//        xSemaphoreGiveFromISR(FrontEdgeSemaphore, &xHigherPriorityTaskWoken);
 //
-//       // xSemaphoreGiveFromISR(FrontEdgeSemaphore, &xHigherPriorityTaskWoken);
+//        //GPIOIntDisable(GPIO_PORTA_BASE, GPIO_PIN_7);
+//
+//        //vuelve a leer en 1s
+////        TimerLoadSet(TIMER0_BASE, TIMER_A, SysCtlClockGet() / 1000 * 200);
+////        TimerEnable(TIMER0_BASE, TIMER_A);
 //    }
+
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
+
+//
+//void Timer0Handler(void) {
+//    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+//    TimerIntClear(TIMER0_BASE, TIMER_TIMA_TIMEOUT); // 清除中断标志
+//    GPIOIntEnable(GPIO_PORTA_BASE, GPIO_PIN_7);
+//
+//    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+//}
 

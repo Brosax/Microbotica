@@ -16,10 +16,6 @@ typedef struct
     uint32_t chan2;
     uint32_t chan3;
     uint32_t chan4;
-    uint32_t chan5;
-    uint32_t chan6;
-    uint32_t chan7;
-    uint32_t chan8;
 } MuestrasADCsensor;
 
 typedef struct
@@ -28,10 +24,6 @@ typedef struct
     uint32_t chan2;
     uint32_t chan3;
     uint32_t chan4;
-    uint32_t chan5;
-    uint32_t chan6;
-    uint32_t chan7;
-    uint32_t chan8;
 
 } MuestrasLeidasADCsensor;
 
